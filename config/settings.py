@@ -1,6 +1,6 @@
 DEFAULT_CODE = "import streamlit as st \n\nst.title('Hi')"
 
-# Editor configuration
+# Editor configuration 
 LANGUAGE = "python"
 HEIGHT = 500
 
