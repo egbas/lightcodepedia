@@ -29,7 +29,7 @@ pure md + IAL (P1); all logic lives here in the engine.
      raw.githubusercontent it accepts the PAT in-browser (CORS-friendly). */
   function resolveSrc(src) {
     var pat = ""; try { pat = localStorage.getItem("lc_ed_pat") || ""; } catch (e) {}
-    var auth = pat ? { Authorization: "Bearer " + pat, Accept: "application/vnd.github.raw", "X-GitHub-Api-Version": "2022-11-28" } : { Accept: "application/vnd.github.raw" };
+    var auth = pat ? { Authorization: "Bearer " + pat, Accept: "application/vnd.github.v3.raw", "X-GitHub-Api-Version": "2022-11-28" } : { Accept: "application/vnd.github.v3.raw" };
     var api = function (o, r, p, ref) { return "https://api.github.com/repos/" + o + "/" + r + "/contents/" + p + (ref ? "?ref=" + encodeURIComponent(ref) : ""); };
     var m = /^gh:([^\/]+)\/([^\/]+)\/(.+?)(?:@([^@]+))?$/.exec(src);
     if (m) return { url: api(m[1], m[2], m[3], m[4]), headers: auth, gh: true };
@@ -56,6 +56,15 @@ pure md + IAL (P1); all logic lives here in the engine.
     fetch(spec.url, spec.headers ? { headers: spec.headers } : undefined)
       .then(function (r) { if (!r.ok) throw { status: r.status, gh: spec.gh }; return r.text(); })
       .then(function (md) {
+        /* some proxies/media-type quirks return the JSON envelope despite
+           Accept raw — unwrap it (base64, UTF-8 safe) so the lesson renders */
+        if (spec.gh && md.charAt(0) === "{") {
+          try {
+            var env = JSON.parse(md);
+            if (env && env.content && env.encoding === "base64")
+              md = decodeURIComponent(escape(atob(env.content.replace(/\n/g, ""))));
+          } catch (e) {}
+        }
         /* strip optional YAML front matter */
         if (md.indexOf("---") === 0) {
           var e = md.indexOf("\n---", 3);
@@ -88,10 +97,19 @@ pure md + IAL (P1); all logic lives here in the engine.
         var hasPat = false; try { hasPat = !!localStorage.getItem("lc_ed_pat"); } catch (e) {}
         if (err && err.gh && (st === 404 || st === 401) && !hasPat)
           status.innerHTML = "🔑 This source is private. Connect a GitHub PAT (topbar “Get started”), then reload.";
-        else if (err && err.gh && st === 404 && hasPat)
-          /* fine-grained tokens answer 404 (not 403) for repos outside their
-             grant — the most common cause when a key IS connected */
-          status.innerHTML = "🔑 Your connected key can’t see this source. A fine-grained key must include this repo (or its org); a classic key needs the <code>repo</code> scope — and you need read access (your session’s team).";
+        else if (err && err.gh && st === 404 && hasPat) {
+          /* fine-grained tokens and out-of-scope classics answer 404 (not 403).
+             Guide, don't strand: the deep link opens GitHub with the repo scope
+             ALREADY ticked and the note naming THIS course's org, so a student's
+             keys stay identifiable (one per class, revocable per class). */
+          var keyFor = gm ? gm[1] : (rw ? rw[1] : "course");
+          var keyNote = encodeURIComponent("Lightcode course key — " + keyFor);
+          status.innerHTML = "🔑 Your key can’t open this course yet — course reading needs a key with the <code>repo</code> scope (and your enrollment accepted).<br>" +
+            "<a href=\"https://github.com/settings/tokens/new?scopes=repo&description=" + keyNote + "\" target=\"_blank\" rel=\"noopener\" " +
+            "style=\"display:inline-block;margin:0.5em 0;padding:0.4em 0.9em;border:1px solid #d0e3f5;border-radius:8px;background:#fff;color:#0066cc;font-weight:600;text-decoration:none\">" +
+            "🪜 Create your course key</a> — the scope and name are pre-filled: set <b>Expiration → Custom</b> to a date past your course’s end " +
+            "(a semester, not 30 days), <b>Generate token</b>, copy it, then paste it in <b>Get started</b> (top right) and reload this page.";
+        }
         else
           status.textContent = "⚠️ Could not load: " + (st ? "HTTP " + st : (err && err.message) || err);
       });
